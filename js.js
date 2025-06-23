@@ -10,14 +10,14 @@ const finalScoreDisplay = document.getElementById('finalScore');
 const restartButton = document.getElementById('restartButton');
 
 // Konfigurationswerte aus gameConfig.js importieren
-// Stellen Sie sicher, dass gameConfig.js VOR js.js geladen wird!
+// Stellen Sie sicher, dass gameConfig.js (oder die Scripte mit den globalen Variablen) VOR js.js geladen wird!
 const {
     maxLives,
     gameDuration,
     spawnInterval,
     canvasWidth,
     canvasHeight
-} = gameConstants;
+} = window.gameConstants; // Zugriff auf die globalen Variablen
 
 // Canvas-Größe setzen
 canvas.width = canvasWidth;
@@ -25,54 +25,62 @@ canvas.height = canvasHeight;
 
 // Spielvariablen
 let score = 0;
-let lives = maxLives; // Jetzt korrekt aus gameConstants
-let timeLeft = gameDuration; // Jetzt korrekt aus gameConstants
+let lives = maxLives;
+let timeLeft = gameDuration;
 let gameRunning = false;
-let targetSpawnInterval;
-let gameTimerInterval;
+let targetSpawnIntervalId; // Umbenannt, um Konflikte zu vermeiden
+let gameTimerIntervalId; // Umbenannt, um Konflikte zu vermeiden
 
 const targets = [];
+const pointsAnimations = []; // Globale Deklaration für Punkte-Animationen
 
 // --- Bilder laden ---
-const schweinImages = {};
+const loadedImages = {}; // Speichert die tatsächlich geladenen Bildobjekte
 
-// Initialisiere die Bilder basierend auf der Konfiguration
-function initializeImages() {
-    Object.keys(imagePaths).forEach(key => {
-        schweinImages[key] = new Image();
-        schweinImages[key].src = imagePaths[key];
-    });
-}
-
-initializeImages();
-
-let imagesLoaded = 0;
-const totalImages = Object.keys(schweinImages).length;
+let imagesLoadedCount = 0;
+const totalImagesToLoad = Object.keys(window.imagePaths).length;
 
 // Funktion, die aufgerufen wird, wenn ein Bild geladen wurde
-function imageLoaded() {
-    imagesLoaded++;
-    if (imagesLoaded === totalImages) {
+function imageLoadComplete() {
+    imagesLoadedCount++;
+    if (imagesLoadedCount === totalImagesToLoad) {
         console.log('Alle Schwein-Bilder erfolgreich geladen!');
-        loadingText.style.display = 'none';
-        resetGame();
+        loadingText.style.display = 'none'; // Lade-Text ausblenden
+        resetGame(); // Spiel nach dem Laden der Bilder initialisieren
     }
 }
 
-// Event-Listener für jedes Bild
-Object.values(schweinImages).forEach(img => {
-    img.onload = imageLoaded;
-    img.onerror = () => {
-        console.error('Fehler beim Laden eines Schwein-Bildes! Fallback auf schwein.png');
-        img.src = 'schwein.png';
-    };
-});
+// Initialisiere und lade alle Bilder
+function preloadAllImages() {
+    Object.keys(window.imagePaths).forEach(key => {
+        const img = new Image();
+        img.src = window.imagePaths[key]; // Korrekter Pfad wird verwendet
+        img.onload = imageLoadComplete;
+        img.onerror = () => {
+            console.error(`Fehler beim Laden von Bild: ${window.imagePaths[key]}! Fallback auf ${window.imagePaths.normal}`);
+            // Fallback auf das normale Schwein-Bild, wenn ein spezifisches Bild fehlschlägt
+            img.src = window.imagePaths.normal; 
+            // Wichtig: Auch der Fallback muss geladen werden, damit der Counter weiterläuft
+            // Wenn der Fallback auch fehlschlägt, gibt es ein ernsteres Problem
+            img.onload = imageLoadComplete; 
+            img.onerror = () => {
+                console.error(`Auch Fallback-Bild ${window.imagePaths.normal} konnte nicht geladen werden!`);
+                imageLoadComplete(); // Trotzdem den Zähler erhöhen, um das Spiel nicht zu blockieren
+            };
+        };
+        loadedImages[key] = img; // Speichert das Image-Objekt
+    });
+}
+
+// Startet den Ladevorgang der Bilder
+preloadAllImages();
+
 
 // --- Ziel-Klasse ---
 class Target {
     constructor(type) {
         this.type = type;
-        const config = pigTypes[type];
+        const config = window.pigTypes[type]; // Zugriff auf die globalen Variablen
 
         this.x = -config.width - 50;
         this.y = Math.random() * (canvas.height - config.height - 100) + 50;
@@ -81,13 +89,13 @@ class Target {
         this.height = config.height;
         this.hit = false;
         this.points = config.points;
-        this.image = schweinImages[config.image];
+        this.image = loadedImages[config.image]; // Verwendet das bereits geladene Bildobjekt
         this.isExtraLife = config.isExtraLife || false;
         this.isExtraTime = config.isExtraTime || false;
         this.timeBonus = config.timeBonus || 0;
         
         if (this.isExtraLife || this.isExtraTime) {
-            this.floatOffset = 0;
+            this.floatOffset = Math.random() * Math.PI * 2; // Zufälliger Startpunkt für sanfteres Floaten
             this.floatSpeed = 0.05;
         }
     }
@@ -98,13 +106,13 @@ class Target {
             
             if (this.isExtraLife || this.isExtraTime) {
                 this.floatOffset += this.floatSpeed;
-                this.y += Math.sin(this.floatOffset) * 0.5;
+                this.y += Math.sin(this.floatOffset) * 0.5; // Sanfteres Auf- und Ab-Bewegen
             }
         }
     }
 
     draw() {
-        if (!this.hit) {
+        if (!this.hit && this.image.complete && this.image.naturalHeight !== 0) { // Überprüfen, ob das Bild vollständig geladen ist
             ctx.save();
             
             if (this.isExtraLife) {
@@ -135,7 +143,7 @@ function getRandomPigType() {
     const random = Math.random();
     let cumulativeChance = 0;
 
-    for (const [type, config] of Object.entries(pigTypes)) {
+    for (const [type, config] of Object.entries(window.pigTypes)) { // Zugriff auf globale Variable
         cumulativeChance += config.spawnChance;
         if (random <= cumulativeChance) {
             return type;
@@ -152,10 +160,11 @@ canvas.addEventListener('click', (e) => {
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
+    // Iteriere rückwärts, um Splice-Operationen während der Iteration zu ermöglichen
     for (let i = targets.length - 1; i >= 0; i--) {
         const target = targets[i];
         if (!target.hit && target.checkHit(clickX, clickY)) {
-            target.hit = true;
+            target.hit = true; // Markiere als getroffen, damit es nicht mehr gezeichnet/gecheckt wird
             
             // Behandlung für Extra-Leben
             if (target.isExtraLife) {
@@ -183,24 +192,28 @@ canvas.addEventListener('click', (e) => {
                 showPointsAnimation(clickX, clickY, target.points, target.type);
             }
 
-            targets.splice(i, 1);
-            break;
+            targets.splice(i, 1); // Entferne das getroffene Ziel
+            break; // Nur ein Ziel pro Klick treffen
         }
     }
 });
 
-// --- Punkte-Animation ---
-const pointsAnimations = [];
-
+// --- Punkte-Animationen Helferfunktionen ---
 function showPointsAnimation(x, y, points, type) {
     let color = 'white';
     let text = `+${points}`;
+    let size = 24;
     
-    if (type === 'gold') color = 'gold';
-    else if (type === 'mini') color = 'lightblue';
-    else if (type === 'bonus') {
+    if (type === 'gold') {
+        color = 'gold';
+        size = 30; // Goldpunkte größer
+    } else if (type === 'mini') {
+        color = 'lightblue';
+        size = 20; // Minischweine kleiner
+    } else if (type === 'bonus') {
         color = 'lime';
         text = `+${points} BONUS!`;
+        size = 32; // Bonus größer
     }
 
     pointsAnimations.push({
@@ -209,7 +222,9 @@ function showPointsAnimation(x, y, points, type) {
         text: text,
         color: color,
         opacity: 1,
-        offsetY: 0
+        offsetY: 0,
+        size: size,
+        lifespan: 60 // Wie viele Frames die Animation sichtbar ist
     });
 }
 
@@ -222,7 +237,8 @@ function showLifeAnimation(x, y) {
         color: 'red',
         opacity: 1,
         offsetY: 0,
-        size: 30
+        size: 30,
+        lifespan: 70
     });
 }
 
@@ -235,18 +251,20 @@ function showTimeAnimation(x, y, seconds) {
         color: 'blue',
         opacity: 1,
         offsetY: 0,
-        size: 30
+        size: 30,
+        lifespan: 70
     });
 }
 
 function updatePointsAnimations() {
     for (let i = pointsAnimations.length - 1; i >= 0; i--) {
         const anim = pointsAnimations[i];
-        anim.offsetY -= 2;
-        anim.opacity -= 0.02;
+        anim.offsetY -= 2; // Bewegung nach oben
+        anim.opacity = anim.lifespan / 60; // Opazität basierend auf Lebensdauer (60 Frames pro Sekunde)
+        anim.lifespan--;
 
-        if (anim.opacity <= 0) {
-            pointsAnimations.splice(i, 1);
+        if (anim.lifespan <= 0) {
+            pointsAnimations.splice(i, 1); // Animation entfernen, wenn Lebensdauer abgelaufen ist
         }
     }
 }
@@ -254,11 +272,13 @@ function updatePointsAnimations() {
 function drawPointsAnimations() {
     pointsAnimations.forEach(anim => {
         ctx.save();
-        ctx.globalAlpha = anim.opacity;
+        ctx.globalAlpha = Math.max(0, anim.opacity); // Sicherstellen, dass Opazität nicht negativ wird
         ctx.fillStyle = anim.color;
-        ctx.font = `bold ${anim.size || 24}px Arial`;
+        ctx.font = `bold ${anim.size}px Arial`;
         ctx.strokeStyle = 'black';
         ctx.lineWidth = 3;
+        ctx.textAlign = 'center'; // Text zentrieren am Klickpunkt
+        ctx.textBaseline = 'middle'; // Text vertikal zentrieren
         ctx.strokeText(anim.text, anim.x, anim.y + anim.offsetY);
         ctx.fillText(anim.text, anim.x, anim.y + anim.offsetY);
         ctx.restore();
@@ -288,7 +308,8 @@ function initializeLivesDisplay() {
     // Erstelle die Lebensbilder
     for (let i = 0; i < maxLives; i++) {
         const lifeImg = document.createElement('img');
-        lifeImg.src = 'schwein_leben.png';
+        // Sicherstellen, dass das 'leben' Bild existiert und geladen ist
+        lifeImg.src = loadedImages.leben ? loadedImages.leben.src : window.imagePaths.leben; 
         lifeImg.classList.add('life-image');
         lifeImg.style.width = '40px';
         lifeImg.style.height = '40px';
@@ -322,7 +343,7 @@ function updateTimerDisplay() {
     timerDisplay.textContent = `Zeit: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     
     // Warnung bei wenig Zeit
-    if (timeLeft <= 30) {
+    if (timeLeft <= 30 && timeLeft > 0) { // Nur warnen, wenn Zeit noch nicht abgelaufen ist
         timerDisplay.style.color = 'red';
     } else {
         timerDisplay.style.color = 'white';
@@ -332,32 +353,36 @@ function updateTimerDisplay() {
 // --- Game Over Logik ---
 function gameOver() {
     gameRunning = false;
-    clearInterval(targetSpawnInterval);
-    clearInterval(gameTimerInterval);
+    clearInterval(targetSpawnIntervalId); // Lösche das Spawn-Intervall
+    clearInterval(gameTimerIntervalId); // Lösche das Game Timer-Intervall
 
     finalScoreDisplay.textContent = `Dein Score: ${score}`;
     gameOverScreen.style.display = 'flex'; // Zeige den Game Over Bildschirm
 }
 
-// Beispiel: In resetGame()
+// --- Spiel zurücksetzen / starten ---
 function resetGame() {
+    // Falls Timer oder Spawner noch laufen, sie stoppen
+    clearInterval(targetSpawnIntervalId);
+    clearInterval(gameTimerIntervalId);
+
     score = 0;
-    lives = maxLives; // Verwendet die deklarierte Konstante
-    timeLeft = gameDuration; // Verwendet die deklarierte Konstante
-    targets.length = 0;
-    pointsAnimations.length = 0;
+    lives = maxLives;
+    timeLeft = gameDuration;
+    targets.length = 0; // Alle Ziele entfernen
+    pointsAnimations.length = 0; // Alle Punkte-Animationen entfernen
 
     updateScoreDisplay();
-    initializeLivesDisplay();
+    initializeLivesDisplay(); // Muss neu initialisiert werden, um alle Bilder neu zu setzen
     updateLivesDisplay();
     updateTimerDisplay();
 
-    gameOverScreen.style.display = 'none';
+    gameOverScreen.style.display = 'none'; // Game Over Bildschirm ausblenden
 
     gameRunning = true;
-    gameLoop();
-    targetSpawnInterval = setInterval(spawnTarget, spawnInterval); // Nutzt den Wert aus der Konfig
-    gameTimerInterval = setInterval(gameTimer, 1000);
+    gameLoop(); // Starte den Game Loop
+    targetSpawnIntervalId = setInterval(spawnTarget, spawnInterval);
+    gameTimerIntervalId = setInterval(gameTimer, 1000);
 }
 
 // --- Game Timer ---
@@ -365,6 +390,8 @@ function gameTimer() {
     timeLeft--;
     updateTimerDisplay();
     if (timeLeft <= 0) {
+        timeLeft = 0; // Sicherstellen, dass die Zeit nicht negativ wird
+        updateTimerDisplay(); // Noch einmal aktualisieren, um 00:00 anzuzeigen
         gameOver();
     }
 }
@@ -383,10 +410,11 @@ function gameLoop() {
         target.update();
         target.draw();
 
+        // Überprüfen, ob das Ziel vom Bildschirm ist UND nicht getroffen wurde (d.h. "entkommen")
         if (target.isOffScreen() && !target.hit) {
             targets.splice(i, 1);
             
-            // Nur Leben verlieren, wenn es kein Extra ist
+            // Nur Leben verlieren, wenn es kein Extra-Ziel ist (Leben/Zeit)
             if (!target.isExtraLife && !target.isExtraTime) {
                 lives--;
                 updateLivesDisplay();
@@ -397,7 +425,7 @@ function gameLoop() {
         }
     }
 
-    // Punkte-Animationen
+    // Punkte-Animationen aktualisieren und zeichnen
     updatePointsAnimations();
     drawPointsAnimations();
 
