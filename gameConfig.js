@@ -1,11 +1,11 @@
 // Mache die Variablen global verfügbar
 window.imagePaths = {
-    normal: 'schwein.png',
-    gold: 'schwein_gold.png',
-    mini: 'schwein_schnell.png',
-    leben: 'schwein_leben.png',
-    extralife: 'extralife.png',
-    extratime: 'extratime.png'
+    normal: 'img/schwein.png',
+    gold: 'img/schwein_gold.png',
+    mini: 'img/schwein_schnell.png',
+    leben: 'img/schwein_leben.png',
+    extralife: 'img/extralife.png',
+    extratime: 'img/extratime.png'
 };
 
 window.pigTypes = {
