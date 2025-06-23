@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oink Oink</title>
+    <link rel="stylesheet" href="css.css">
+</head>
+<body>
+    <div id="gameInfo">
+        <div id="score">Punkte: 0</div>
+        <div id="lives">Leben: 5</div>
+        <div id="timer">Zeit: 03:00</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <div id="loadingText">Lade Bilder...</div>
+
+     <div id="gameOverScreen">
+        <p>Spiel vorbei!</p>
+        <p id="finalScore">Dein Score: 0</p>
+        <button id="restartButton">Neues Spiel</button>
+    </div>
+
+    <!-- Zuerst die Konfigurationsdatei laden -->
+    <script src="gameConfig.js"></script>
+    <!-- Dann das Hauptskript, das auf die Konfiguration zugreift -->
+    <script src="js.js"></script>
+</body>
+</html>
